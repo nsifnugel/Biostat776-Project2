@@ -1,0 +1,287 @@
+---
+title: "Project 2"
+author: "Natalia Sifnugel"
+date: "2023-09-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(tidytuesdayR)
+library(here)
+library(lubridate)
+library(sessioninfo)
+
+```
+
+# Part 1 Fun with functions
+
+### Part 1A: Exponential transformation
+
+```{r}
+
+Exp <- function(x, k) {
+  exp = 1 
+ for(i in 1:k){
+   exp2 = x^i/factorial(i)
+   exp = exp + exp2
+ } 
+  return(exp)
+}
+
+```
+
+#### Sample outputs
+
+```{r}
+
+Exp(2,4)
+
+# check 
+
+1 + 2 + (2^2/factorial(2)) + (2^3/factorial(3)) + (2^4/factorial(4))
+
+```
+
+### Part 1B: Sample mean and sample standard deviation
+
+```{r}
+
+sample_mean <- function(x) {
+  numerator = 0
+  denominator = 0
+  for(i in seq_along(x)){
+    numerator = numerator + x[i] 
+    denominator = denominator + 1
+  } 
+  mean = numerator/denominator
+  return(mean)
+}
+
+sample_sd <- function(x) {
+  numerator = 0
+  denominator = 0
+  for(i in seq_along(x)){
+    numerator = numerator + (x[i]-sample_mean(x))^2
+    denominator = denominator + 1
+  } 
+  sd = sqrt(numerator/(denominator-1))
+  return(sd)
+}
+
+```
+
+#### Sample outputs
+
+```{r}
+x = c(1,22,14,67,10)
+
+sample_mean(x)
+
+# check 
+mean(x)
+
+sample_sd(x)
+
+# check 
+sd(x)
+```
+
+### Part 1C: Confidence intervals
+
+```{r}
+
+calculate_CI <- function(x, conf = 0.95) {
+  alpha <- 1 - conf
+  degrees_freedom <- length(x) - 1
+  t_score <- qt(p = alpha / 2, df = degrees_freedom, lower.tail = FALSE) 
+  lower_tail = sample_mean(x) - t_score*(sample_sd(x)/sqrt(length(x)))
+  upper_tail = sample_mean(x) + t_score*(sample_sd(x)/sqrt(length(x)))
+  CI = c(lower_tail,upper_tail)
+  return(CI)
+}
+
+```
+
+#### Sample outputs
+
+```{r}
+x = c(1,22,14,67,10)
+
+calculate_CI(x,0.90)
+calculate_CI(x,0.80)
+
+# check 
+
+dat <- data.frame(x = x)
+fit <- lm(x ~ 1, dat)
+confint(fit, level = 0.90)
+
+confint(fit, level = 0.80)
+
+```
+
+# Part 2: Wrangling data
+
+### Downloading datasets
+```{r}
+
+if (!dir.exists(here("data"))) {
+  dir.create(here("data"))
+}
+
+if (!file.exists(here("data", "tuesdata_rainfall.RDS"))) {
+    tuesdata <- tidytuesdayR::tt_load("2020-01-07")
+    rainfall <- tuesdata$rainfall
+    temperature <- tuesdata$temperature
+
+    # save the files to RDS objects
+    saveRDS(tuesdata$rainfall, file = here("data", "tuesdata_rainfall.RDS"))
+    saveRDS(tuesdata$temperature, file = here("data", "tuesdata_temperature.RDS"))
+}
+
+rainfall <- readRDS(here("data", "tuesdata_rainfall.RDS"))
+temperature <- readRDS(here("data", "tuesdata_temperature.RDS"))
+
+```
+
+### Wrangling rainfall dataset and joining it to temperature dataset
+```{r}
+rainfall_temp <-rainfall %>%
+  drop_na()  %>%
+  mutate(date = ymd(paste(year,month,day, sep = "-")), city_name = toupper(city_name)) %>%
+  select(-month,-day) %>%
+  inner_join(temperature, by = c("date","city_name"), relationship = "many-to-many")
+
+show(rainfall_temp)
+```
+
+# Part 3: Data visualization
+
+### Part 3A: Plotting temperature data over time
+
+```{r fig.height=14, fig.width=18}
+rainfall_temp %>%
+  filter(year >= 2014) %>%
+  ggplot() +
+  geom_line(aes(x = date, y = temperature, color = temp_type))+
+  facet_grid(city_name ~. ) +
+  labs(title = "Temperature vs. Year",
+       subtitle = "Canberra experiences greatest range in daily temperature. In Sydney, peak daily temperatures are rising.",
+       caption = "Source: Australian Government, Bureau of Meteorology ",
+      x = "Date",
+      y = "Temperature (C)") +
+  theme_light() +
+  theme(axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 16),
+        plot.title = element_text(size = 22),
+        plot.subtitle = element_text(size = 16))
+```
+
+### Part 3B: Plotting rainfall over time
+
+```{r fig.height=8, fig.width=14}
+
+rainfall_histogram <- function(x, y) {
+  if(x %in% rainfall_temp$city_name){
+    rainfall_city <- rainfall_temp %>%
+    filter(city_name == x)
+  } else {
+    stop(x," is not in the dataset.")
+  }
+  if(y %in% rainfall_city$year){
+      rainfall_city %>%
+      filter(year == y) %>%
+      ggplot(aes(log(rainfall + 0.000000000000001))) +
+        geom_histogram(fill = 'lightblue', color = 'black') +
+        labs(title = paste("Distribution of Rainfall in",x,"in",y, sep = " "),
+                subtitle =  paste("Use this histogram to determine if",y,"was a year of deluge, drought, or expected rain in",x,sep = " "),
+                caption = "Source: Australian Government, Bureau of Meteorology ",
+                x = "log(Rainfall in mm)",
+                y = "Number of Days") +
+        theme_light() +
+        theme(axis.title.x = element_text(size = 12),
+              axis.title.y = element_text(size = 12),
+              plot.title = element_text(size = 18),
+              plot.subtitle = element_text(size = 12))
+  } else{
+    stop(y," not in dataset for ",x,".")
+  }
+}
+```
+#### Function design 
+
+In this function, I used an if statement to check if the city is in the data set. If the city is in the data set, then a new filtered data frame is created in which only the values for the specified city are included. This data set then enters a new if else statement to check if the year (second input) exists for this city. If the year does exist in the filtered city data set, then a histogram is generated for that city for that year. If these two conditions were not met, the function returns a statement indicating the data are not present. 
+
+Because the log(0) is an infinite number, days with 0 mm of rainfall were initially dropped from the histogram. Days of 0 rainfall for this data set as a whole are important because it seeks to understand the relationship between temperate, rain, and fires. So, to ensure that days of 0 rainfall are included, I added a small constant (rainfall + 0.000000000000001). 
+
+
+#### Example output
+
+```{r fig.height=8, fig.width=14}
+
+rainfall_histogram('PERTH',2000)
+
+rainfall_histogram('BRISBANE',1981)
+
+rainfall_histogram('SYDNEY',2014)
+
+```
+
+# Part 4: Apply functions and plot
+
+### Part 4A: Summary of rainfall data for each city since 2014
+
+```{r}
+
+rain_df <- rainfall_temp %>%
+  filter(year >= 2014) %>%
+  group_by(city_name, year) %>%
+  summarize(tibble(
+    `mean` = sample_mean(rainfall),
+    `sd` = sample_sd(rainfall),
+    `lower_bound` = calculate_CI(rainfall,0.95)[1],
+    `upper_bound` = calculate_CI(rainfall,0.95)[2]
+  )
+)
+
+show(rain_df)
+```
+
+### Part 4B: Plotting mean rainfall 
+
+```{r fig.height=8, fig.width=20}
+
+rain_df %>%
+  ggplot() +
+  geom_point(aes(year,mean, color = city_name)) +
+  geom_line(aes(year,mean, color = city_name)) +
+  facet_grid(.~ city_name) +
+  geom_errorbar(aes(ymin= lower_bound, ymax= upper_bound, x = year), width = 0.2) +
+  labs(title = "Mean Rainfall by Year",
+       subtitle =  "Average rainfall is on the decline across major cities in Australia.",
+       caption = "Source: Australian Government, Bureau of Meteorology ",
+       x = "Year",
+       y = "Rainfall in mm") +
+  theme_light() +
+  theme(legend.position = "none",
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 16),
+        plot.title = element_text(size = 22),
+        plot.subtitle = element_text(size = 16))
+
+```
+
+
+# R session information
+
+```{r}
+
+options(width = 120)
+sessioninfo::session_info()
+
+```
